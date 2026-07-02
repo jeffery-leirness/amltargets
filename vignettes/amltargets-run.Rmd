@@ -45,6 +45,48 @@ Before using this package you need:
      `"azureml://datastores/workspaceblobstore/paths/<your/path>/"`.
      Create the path under your datastore before running the pipeline.
 
+## Mounting `_targets` on the local Compute Instance
+
+The offloaded job already mounts the blob-backed datastore on the cluster side.
+You should also mount the same datastore path on your local Azure ML Compute
+Instance and symlink it into your project as `_targets/`.
+
+This keeps `targets::tar_make()` and `targets::tar_read()` on the compute
+instance pointed at the same cache location used by cluster jobs.
+
+1. Choose a local mount point on the compute instance:
+
+```bash
+mkdir -p "$HOME/amltargets-mounts/pipeline-targets"
+```
+
+2. Mount your blob datastore path with `az mount`:
+
+```bash
+az mount \
+  --path "azureml://datastores/workspaceblobstore/paths/pipeline/_targets/" \
+  --mount-point "$HOME/amltargets-mounts/pipeline-targets" \
+  --resource-group my-resource-group \
+  --workspace-name my-ml-workspace
+```
+
+3. From your project root (on `workspacefileshare`), symlink that mount as
+   `_targets/`:
+
+```bash
+cd /path/to/your/project
+ln -sfn "$HOME/amltargets-mounts/pipeline-targets" _targets
+```
+
+4. Verify the link:
+
+```bash
+ls -ld _targets
+```
+
+If `az mount` is not recognized in your environment, update Azure CLI and
+the ML extension, then rerun the mount command.
+
 ## Installation
 
 ```{r install}

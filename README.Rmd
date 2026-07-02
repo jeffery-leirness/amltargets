@@ -60,6 +60,28 @@ AZURE_RESOURCE_GROUP=my-resource-group
 AZURE_ML_WORKSPACE=my-ml-workspace
 ```
 
+### Mount `_targets` on your Compute Instance
+
+To share the same cache between local orchestration and cluster jobs, mount the
+blob datastore path locally and symlink it into your project as `_targets/`.
+
+```bash
+mkdir -p "$HOME/amltargets-mounts/pipeline-targets"
+
+az mount \
+  --path "azureml://datastores/workspaceblobstore/paths/pipeline/_targets/" \
+  --mount-point "$HOME/amltargets-mounts/pipeline-targets" \
+  --resource-group my-resource-group \
+  --workspace-name my-ml-workspace
+
+cd /path/to/your/project
+ln -sfn "$HOME/amltargets-mounts/pipeline-targets" _targets
+ls -ld _targets
+```
+
+If `az mount` is not recognized, update Azure CLI and the ML extension, then
+rerun the command.
+
 ## Usage
 
 Use `tar_aml_job()` anywhere you would normally use `targets::tar_target()` for
