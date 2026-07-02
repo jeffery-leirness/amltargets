@@ -1,0 +1,142 @@
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+# amltargets
+
+<!-- badges: start -->
+
+![lifecycle](https://img.shields.io/badge/lifecycle-experimental-orange)
+<!-- badges: end -->
+
+`amltargets` extends `targets` with a single high-leverage factory,
+`tar_aml_job()`, to offload expensive targets to Azure Machine Learning
+(Azure ML) compute clusters.
+
+The package keeps your normal `targets` workflow while adding:
+
+  - Asynchronous Azure ML command job submission
+  - Polling and status tracking from your local R session
+  - Resume after interruption using JSON run tokens in
+    `_targets/azure_tokens/`
+  - Hybrid execution where only selected targets run in Azure ML
+
+## Why amltargets?
+
+If your pipeline has a few targets that are too heavy for a laptop but
+the rest is fast locally, `amltargets` gives you a clean split:
+
+  - Keep lightweight orchestration local with `targets`
+  - Send expensive compute to Azure ML clusters
+  - Preserve static dependency analysis and normal `targets` ergonomics
+
+## Installation
+
+Install from GitHub with `pak` (recommended):
+
+``` r
+# install.packages("pak")
+pak::pak("jeffery-leirness/amltargets")
+```
+
+## Prerequisites
+
+Before running `tar_aml_job()`, make sure you have:
+
+  - Azure CLI installed and authenticated (`az login`)
+  - An Azure ML workspace and compute cluster
+  - A registered Azure ML environment containing R and your dependencies
+  - A datastore path for the shared `_targets` cache, for example:
+    `azureml://datastores/workspaceblobstore/paths/pipeline/_targets/`
+
+You can set workspace defaults once in `.Renviron`:
+
+``` ini
+AZURE_RESOURCE_GROUP=my-resource-group
+AZURE_ML_WORKSPACE=my-ml-workspace
+```
+
+## Usage
+
+Use `tar_aml_job()` anywhere you would normally use
+`targets::tar_target()` for compute-heavy steps.
+
+``` r
+library(targets)
+library(amltargets)
+
+DATASTORE <- "azureml://datastores/workspaceblobstore/paths/pipeline/_targets/"
+
+list(
+  tar_target(raw_data, mtcars),
+
+  tar_target(
+    splits,
+    {
+      set.seed(123)
+      train_idx <- sample(seq_len(nrow(raw_data)), floor(0.8 * nrow(raw_data)))
+      list(
+        train = raw_data[train_idx, ],
+        test = raw_data[-train_idx, ]
+      )
+    }
+  ),
+
+  tar_aml_job(
+    model_fit,
+    lm(mpg ~ wt + cyl, data = splits$train),
+    cluster = "gpu-cluster",
+    datastore_path = DATASTORE,
+    environment = "azureml:r-tidyverse@latest",
+    poll_interval = 60L
+  ),
+
+  tar_target(
+    mse,
+    {
+      preds <- predict(model_fit, newdata = splits$test)
+      mean((splits$test$mpg - preds)^2)
+    }
+  )
+)
+```
+
+Run as usual:
+
+``` r
+tar_make()
+```
+
+## Execution modes
+
+At runtime, the orchestrator automatically selects one mode:
+
+  - Hybrid (default): submit to Azure ML and poll until terminal state
+  - Cluster mode: if `AZUREML_RUN_ID` is set, evaluate directly
+    on-cluster
+  - Forced local mode: if `TAR_AZURE_ML_LOCAL=true` or
+    `options(tar_azure_ml_local = TRUE)`
+
+For rapid local tests without cloud submission:
+
+``` r
+Sys.setenv(TAR_AZURE_ML_LOCAL = "true")
+tar_make()
+Sys.unsetenv("TAR_AZURE_ML_LOCAL")
+```
+
+## How resilience works
+
+When an Azure ML job is submitted, `amltargets` writes a token file
+containing the run ID. If `tar_make()` is interrupted (sleep, reboot,
+session exit), the next run resumes tracking the existing Azure ML job
+instead of creating a duplicate submission.
+
+## Learn more
+
+  - Package vignette: `vignette("amltargets-run", package =
+    "amltargets")`
+  - `targets` documentation: <https://docs.ropensci.org/targets/>
+
+## License
+
+MIT, see `LICENSE`.

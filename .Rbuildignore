@@ -8,3 +8,5 @@
 ^vignettes/\*\.html$
 ^\.vscode$
 ^\.vscode/
+^README\.Rmd$
+^README-.*\.png$
