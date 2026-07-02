@@ -54,23 +54,18 @@ Instance and symlink it into your project as `_targets/`.
 This keeps `targets::tar_make()` and `targets::tar_read()` on the compute
 instance pointed at the same cache location used by cluster jobs.
 
-1. Choose a local mount point on the compute instance:
+1. Mount your blob datastore path with `az ml datastore mount`:
 
 ```bash
-mkdir -p "$HOME/amltargets-mounts/pipeline-targets"
-```
-
-2. Mount your blob datastore path with `az mount`:
-
-```bash
-az mount \
+az ml datastore mount \
   --path "azureml://datastores/workspaceblobstore/paths/pipeline/_targets/" \
+  --mode rw_mount \
   --mount-point "$HOME/amltargets-mounts/pipeline-targets" \
   --resource-group my-resource-group \
   --workspace-name my-ml-workspace
 ```
 
-3. From your project root (on `workspacefileshare`), symlink that mount as
+2. From your project root (on `workspacefileshare`), symlink that mount as
    `_targets/`:
 
 ```bash
@@ -78,13 +73,13 @@ cd /path/to/your/project
 ln -sfn "$HOME/amltargets-mounts/pipeline-targets" _targets
 ```
 
-4. Verify the link:
+3. Verify the link:
 
 ```bash
 ls -ld _targets
 ```
 
-If `az mount` is not recognized in your environment, update Azure CLI and
+If `az ml datastore mount` is not recognized in your environment, update Azure CLI and
 the ML extension, then rerun the mount command.
 
 ## Installation

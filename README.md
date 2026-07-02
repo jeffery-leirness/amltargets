@@ -62,10 +62,9 @@ mount the blob datastore path locally and symlink it into your project
 as `_targets/`.
 
 ``` bash
-mkdir -p "$HOME/amltargets-mounts/pipeline-targets"
-
-az mount \
+az ml datastore mount \
   --path "azureml://datastores/workspaceblobstore/paths/pipeline/_targets/" \
+  --mode rw_mount \
   --mount-point "$HOME/amltargets-mounts/pipeline-targets" \
   --resource-group my-resource-group \
   --workspace-name my-ml-workspace
@@ -75,8 +74,8 @@ ln -sfn "$HOME/amltargets-mounts/pipeline-targets" _targets
 ls -ld _targets
 ```
 
-If `az mount` is not recognized, update Azure CLI and the ML extension,
-then rerun the command.
+If `az ml datastore mount` is not recognized, update Azure CLI and the
+ML extension, then rerun the command.
 
 ## Usage
 
