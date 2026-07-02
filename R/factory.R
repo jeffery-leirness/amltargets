@@ -123,18 +123,35 @@ tar_aml_job <- function(
   # for static dependency analysis without executing anything locally
   deps_formula <- as.formula(paste("~", command_str))
 
-  # Build the call to the internal orchestrator with all values fully resolved
-  internal_call <- call(
-    "tar_aml_job_internal",
-    target_name = name_str,
-    command_str = command_str,
-    deps = deps_formula,
-    cluster = cluster,
-    datastore_path = datastore_path,
-    environment = environment,
-    resource_group = resource_group,
-    workspace = workspace,
-    poll_interval = poll_interval
+  # Resolve the internal orchestrator from this package namespace at runtime
+  # so targets can evaluate reliably without using self ::: calls.
+  internal_call <- substitute(
+    get(
+      "tar_aml_job_internal",
+      envir = asNamespace("amltargets"),
+      inherits = FALSE
+    )(
+      target_name = target_name,
+      command_str = command_str,
+      deps = deps,
+      cluster = cluster,
+      datastore_path = datastore_path,
+      environment = environment,
+      resource_group = resource_group,
+      workspace = workspace,
+      poll_interval = poll_interval
+    ),
+    list(
+      target_name = name_str,
+      command_str = command_str,
+      deps = deps_formula,
+      cluster = cluster,
+      datastore_path = datastore_path,
+      environment = environment,
+      resource_group = resource_group,
+      workspace = workspace,
+      poll_interval = poll_interval
+    )
   )
 
   targets::tar_target_raw(
