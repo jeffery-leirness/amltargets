@@ -1,0 +1,316 @@
+---
+title: "Using amltargets::tar_aml_job(): Offloading Targets to Azure ML"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Using amltargets::tar_aml_job(): Offloading Targets to Azure ML}
+  %\VignetteDepends{amltargets}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  eval     = FALSE
+)
+```
+
+`amltargets` extends the [`targets`](https://docs.ropensci.org/targets/) package
+with a single function, `tar_aml_job()`, that offloads a target's computation
+to an **Azure ML Compute Cluster** as an asynchronous Command Job.
+The local R session submits the job, then polls until it finishes —
+and if your laptop sleeps or reboots in the meantime, the pipeline picks up
+exactly where it left off.
+
+## Prerequisites
+
+Before using this package you need:
+
+1. **Azure CLI** installed and authenticated (`az login`).
+2. An **Azure ML workspace** with at least one compute cluster provisioned.
+3. An **Azure ML environment** that has R (and your package dependencies)
+   installed. See [Registering an R environment](#sec-environment) below.
+4. A **split-storage setup** with two Azure storage resources:
+   - **`workspacefileshare`** (Azure Files) — mounted on both the local Compute
+     Instance and the cluster. Your R scripts and `_targets.R` live here.
+     The job YAML sets `code` to the current working directory (`getwd()`),
+     which Azure ML snapshots as the job source.
+   - **`workspaceblobstore`** (Azure Blob Storage) — used exclusively for the
+     `_targets/` pipeline cache. It is attached to the cluster container as a
+     read-write output mount, and the job symlinks it to `_targets/` in the
+     working directory before R starts. Pass its datastore URI as the
+     `datastore_path` argument.
+   - The `datastore_path` URI takes the form
+     `"azureml://datastores/workspaceblobstore/paths/<your/path>/"`.
+     Create the path under your datastore before running the pipeline.
+
+## Installation
+
+```{r install}
+# install.packages("pak")
+pak::pkg_install("jeffery-leirness/amltargets")
+```
+
+## Setting up credentials
+
+`tar_aml_job()` needs to know your Azure resource group and workspace name.
+Rather than repeating them in every call, set them once in your project's
+`.Renviron` file:
+
+```{ini}
+AZURE_RESOURCE_GROUP=my-resource-group
+AZURE_ML_WORKSPACE=my-ml-workspace
+```
+
+Restart R (or call `readRenviron(".Renviron")`) to pick them up.
+You can still override either value per-call if a target needs a different
+workspace.
+
+## Registering an R environment {#sec-environment}
+
+Azure ML runs the job inside a Docker-based environment. You need to register
+one that has R and your project's packages. The minimal approach is a curated
+or custom environment defined in a YAML file.
+
+Create `azureml/r-env.yaml` in your project:
+
+```{yaml}
+$schema: https://azuremlschemas.azureedge.net/latest/environment.schema.json
+name: r-tidyverse
+description: "R 4.5 + tidyverse for pipeline jobs"
+image: rocker/tidyverse:4.5
+```
+
+Register it once:
+
+```{bash}
+az ml environment create \
+  --file azureml/r-env.yaml \
+  --resource-group my-resource-group \
+  --workspace-name my-ml-workspace
+```
+
+Use `environment = "azureml:r-tidyverse@latest"` in your `tar_aml_job()`
+calls.
+
+## A full `_targets.R` example
+
+Below is a complete pipeline that:
+
+1. Reads data locally (a lightweight step, kept local).
+2. Trains a model on a GPU cluster (expensive, offloaded to Azure ML).
+3. Evaluates the model locally using the result written by the cluster.
+
+```{r targets-file}
+# _targets.R
+library(targets)
+library(amltargets)
+
+# ── Shared Azure ML settings ─────────────────────────────────────────────────
+# Set AZURE_RESOURCE_GROUP and AZURE_ML_WORKSPACE in .Renviron so they don't
+# appear in every call below.
+DATASTORE <- "azureml://datastores/workspaceblobstore/paths/pipeline/_targets/"
+
+# ── Pipeline definition ───────────────────────────────────────────────────────
+list(
+  # Step 1 — load data locally
+  tar_target(raw_data, command = mtcars),
+
+  # Step 2 — split locally using base R
+  tar_target(
+    splits,
+    command = {
+      set.seed(123)
+      # Create an 80/20 train/test split
+      train_idx <- sample(seq_len(nrow(raw_data)), floor(0.8 * nrow(raw_data)))
+      list(
+        train = raw_data[train_idx, ],
+        test = raw_data[-train_idx, ]
+      )
+    }
+  ),
+
+  # Step 3 — train on Azure ML GPU cluster  ← offloaded
+  # The command expression references `splits`, so targets knows this target
+  # depends on Step 2 and will wait for it before submitting the job.
+  tar_aml_job(
+    model_fit,
+    command = {
+      # Train a simple linear model predicting miles per gallon (mpg)
+      # using weight (wt) and cylinders (cyl)
+      lm(mpg ~ wt + cyl, data = splits$train)
+    },
+    cluster = "gpu-cluster",
+    datastore_path = DATASTORE,
+    environment = "azureml:r-tidyverse@latest",
+    poll_interval = 60L
+  ),
+
+  # Step 4 — evaluate locally using base R predict()
+  tar_target(
+    metrics,
+    command = {
+      # Generate predictions on the test set
+      preds <- predict(model_fit, newdata = splits$test)
+
+      # Calculate Mean Squared Error (MSE)
+      mse <- mean((splits$test$mpg - preds)^2)
+      c(MSE = mse)
+    }
+  )
+)
+```
+
+Run the pipeline as usual:
+
+```{r run}
+targets::tar_make()
+```
+
+`targets` handles dependency ordering automatically. The `model_fit` target
+will not be submitted until `splits` is up to date. While the Azure ML job is
+running, your console will display polling messages:
+
+```
+● run target model_fit
+Submitted Azure ML job for target 'model_fit'. Run ID: dreamy_spoon_abc123xyz
+[2026-07-01 14:03:00] Job dreamy_spoon_abc123xyz status: Preparing. Polling again in 60s...
+[2026-07-01 14:04:00] Job dreamy_spoon_abc123xyz status: Running. Polling again in 60s...
+[2026-07-01 14:09:00] Job dreamy_spoon_abc123xyz status: Completed.
+● built target model_fit
+```
+
+## How reboot resilience works
+
+When `tar_aml_job()` submits a job it writes a small JSON **token file**
+to `<store>/azure_tokens/<target_name>.json` containing the Run ID:
+
+```{json}
+{ "run_id": "dreamy_spoon_abc123xyz" }
+```
+
+The store location is resolved at runtime by `targets::tar_path_store()`, so
+it respects any custom store configured via `tar_config_set(store = ...)` or
+`_targets.yaml`. By default this is the `_targets/` directory, which on your
+local Compute Instance resolves through the `workspacefileshare` mount.
+
+If your laptop sleeps, reboots, or `tar_make()` is interrupted, the token file
+persists on the shared mount. On the next call to `tar_make()`, the orchestrator
+finds the token and resumes polling the *existing* job — no duplicate submission.
+
+Once the job reaches a terminal state (Completed, Failed, or Canceled), the
+token is deleted automatically.
+
+## Execution modes
+
+The orchestrator chooses one of three modes at runtime:
+
+| Mode | Trigger | Behaviour |
+|---|---|---|
+| **Hybrid** (default) | Neither flag is set | Submits to Azure ML, polls from local R session |
+| **Cluster** | `AZUREML_RUN_ID` env var is set | Evaluates the command directly; used automatically inside the Azure ML job |
+| **Forced local** | `TAR_AZURE_ML_LOCAL=true` or `options(tar_azure_ml_local = TRUE)` | Evaluates locally; useful for rapid local testing without submitting jobs |
+
+To test your pipeline end-to-end locally before spending cloud compute:
+
+```{r local-mode}
+Sys.setenv(TAR_AZURE_ML_LOCAL = "true")
+targets::tar_make()
+Sys.unsetenv("TAR_AZURE_ML_LOCAL")
+```
+
+## Cluster-side job setup
+
+When Azure ML picks up the Command Job, the actual entrypoint is a two-step
+shell command generated by `write_job_yaml()`:
+
+```{bash}
+ln -s ${{outputs.cluster_targets_dir}} _targets && Rscript _azureml_<target_name>.R
+```
+
+The `ln -s` step symlinks the blob storage output mount (injected by Azure ML
+as `${{outputs.cluster_targets_dir}}`) to `_targets/` in the cluster
+container's working directory. This means `targets::tar_read()` and
+`targets::tar_make()` on the cluster see the same cache as your local session.
+The `code` field in the job YAML points to `getwd()`, so Azure ML snapshots
+the current `workspacefileshare` project directory as the job source, and your scripts are
+available on the cluster without any manual upload step.
+
+Because that code snapshot now contains a symlink named `_targets`, add an
+`.amlignore` file at the root of your project directory (next to `_targets.R`)
+with this single line:
+
+```text
+_targets/
+```
+
+Azure ML respects `.amlignore` when packaging the code snapshot. Excluding
+`_targets/` prevents Azure ML from traversing the symlink and attempting to zip
+up the entire pipeline cache on every job submission, which keeps submission
+latency low even when the blob-backed cache grows large. This lets you keep
+your preferred workspace layout on `workspacefileshare` while using
+`workspaceblobstore` as the high-capacity backend for `targets` data.
+
+The generated `_azureml_<target_name>.R` worker script does three important
+things before returning a value:
+
+1. Sources `_targets.R` to load project functions, options, and package setup.
+2. Uses `targets::tar_network()` and `targets::tar_load()` to load upstream
+  dependencies required by the offloaded target.
+3. Evaluates your command expression, then writes the result to
+  `_targets/azure_transfers/<target_name>.rds` so the local orchestrator can
+  read it and apply the requested target format.
+
+For this to work, the cluster node must also be able to:
+
+- **Load all packages** referenced in `command`. Include them in your Azure ML
+  environment image or install them via a job `setup_script`.
+- **Evaluate target code from your project**. Because `_targets.R` is sourced
+  automatically by the worker script, your command usually does not need an
+  explicit `targets::tar_source()` call.
+
+A command block that uses upstream dependencies and project helpers directly:
+
+```{r self-contained}
+DATASTORE <- "azureml://datastores/workspaceblobstore/paths/pipeline/_targets/"
+
+tar_aml_job(
+  model_fit,
+  command = lm(mpg ~ wt + cyl, data = splits$train),
+  cluster = "gpu-cluster",
+  datastore_path = DATASTORE,
+  environment = "azureml:r-tidyverse@latest"
+)
+```
+
+## Passing `tar_target()` options
+
+`tar_aml_job()` forwards `...` to `targets::tar_target_raw()`, so any
+standard target option works:
+
+```{r tar-options}
+tar_aml_job(
+  big_embedding,
+  compute_embeddings(corpus),
+  cluster = "gpu-cluster",
+  datastore_path = DATASTORE,
+  environment = "azureml:r-tidymodels:1",
+  format = "qs",   # fast serialisation for large objects
+  priority = 1       # run this target first
+)
+```
+
+## Inspecting the pipeline manifest
+
+Because `tar_aml_job()` uses non-standard evaluation, `targets` can still
+perform static code analysis and build the full dependency graph:
+
+```{r manifest}
+targets::tar_manifest()
+targets::tar_visnetwork()
+```
+
+The `model_fit` target will appear in the graph with `splits` as an upstream
+dependency, even though `model_fit` is evaluated on Azure ML while `splits`
+is built locally.
