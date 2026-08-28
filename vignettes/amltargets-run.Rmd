@@ -12,7 +12,8 @@ vignette: >
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment  = "#>",
-  eval     = FALSE
+  eval     = FALSE,
+  purl     = FALSE
 )
 ```
 
@@ -44,43 +45,6 @@ Before using this package you need:
    - The `datastore_path` URI takes the form
      `"azureml://datastores/workspaceblobstore/paths/<your/path>/"`.
      Create the path under your datastore before running the pipeline.
-
-## Mounting `_targets` on the local Compute Instance
-
-The offloaded job already mounts the blob-backed datastore on the cluster side.
-You should also mount the same datastore path on your local Azure ML Compute
-Instance and symlink it into your project as `_targets/`.
-
-This keeps `targets::tar_make()` and `targets::tar_read()` on the compute
-instance pointed at the same cache location used by cluster jobs.
-
-1. Mount your blob datastore path with `az ml datastore mount`:
-
-```bash
-az ml datastore mount \
-  --path "azureml://datastores/workspaceblobstore/paths/pipeline/_targets/" \
-  --mode rw_mount \
-  --mount-point "$HOME/amltargets-mounts/pipeline-targets" \
-  --resource-group my-resource-group \
-  --workspace-name my-ml-workspace
-```
-
-2. From your project root (on `workspacefileshare`), symlink that mount as
-   `_targets/`:
-
-```bash
-cd /path/to/your/project
-ln -sfn "$HOME/amltargets-mounts/pipeline-targets" _targets
-```
-
-3. Verify the link:
-
-```bash
-ls -ld _targets
-```
-
-If `az ml datastore mount` is not recognized in your environment, update Azure CLI and
-the ML extension, then rerun the mount command.
 
 ## Installation
 
@@ -130,6 +94,85 @@ az ml environment create \
 
 Use `environment = "azureml:r-tidyverse@latest"` in your `tar_aml_job()`
 calls.
+
+## Sharing the `_targets` store between local and cluster
+
+`tar_aml_job()` writes each offloaded result into the blob-backed `_targets/`
+cache on the cluster. Your local session needs to see that same cache so
+`tar_make()` and `tar_read()` resolve cloud-built targets. `aml_init()` and the
+`aml_store_*()` helpers manage this — and replace any manual
+`az ml datastore mount` + symlink step.
+
+### Why the store is split
+
+The `_targets/` store holds two very different kinds of content:
+
+- **`objects/`** — large, write-once target values, ideal for direct blob
+  storage.
+- **`meta`** — a small text file that `targets` rewrites on *every* build.
+  Blobfuse file locks make this constant rewriting unreliable and can corrupt
+  pipeline metadata.
+
+`aml_init()` therefore **symlinks `objects/` straight to blob storage**
+(zero-copy, always current) while keeping **`meta` on the local fileshare** and
+syncing it explicitly, so the hot file never touches blobfuse locking.
+
+### Initialize a session
+
+Call `aml_init()` once at the top of your session:
+
+```{r store-init}
+library(targets)
+library(amltargets)
+
+store <- aml_init(
+  account_name     = "mystorageacct",
+  container_name   = "mycontainer",
+  cloud_store_path = "pipeline/_targets",
+  project          = "region_a"
+)
+```
+
+`aml_init()` detects whether it is running locally or inside an Azure ML job,
+mounts blob storage (or uses the native datastore mount on the cluster),
+establishes matching symlinks, and pulls the cloud store's metadata into your
+local `_targets/`. It returns `cloud_store_base`, which the other store helpers
+need.
+
+### Push metadata after each run
+
+Target `objects/` are written straight to blob storage through the symlink, but
+the local `meta` file is not. Push it back after every local `tar_make()` so the
+cloud store reflects the latest pipeline state:
+
+```{r store-push}
+tar_make()
+aml_store_push(store$cloud_store_base, project = "region_a")
+```
+
+### Refresh after cluster jobs land
+
+When `tar_aml_job()` targets finish on the cluster they update the cloud store
+directly. Blobfuse may still serve a stale local view, so refresh with:
+
+```{r store-sync}
+aml_store_sync(
+  account_name     = "mystorageacct",
+  container_name   = "mycontainer",
+  cloud_store_base = store$cloud_store_base,
+  project          = "region_a"
+)
+```
+
+This remounts blob storage (invalidating stale caches), resets the local cache,
+and re-pulls fresh metadata.
+
+### Maintenance helpers
+
+- `aml_store_verify()` confirms the `objects/` symlink resolves and metadata is
+  readable, self-healing a corrupted local cache.
+- `aml_store_reset()` clears the local cache and parity symlinks. It detaches the
+  `objects/` symlink before deleting, so cloud objects are never touched.
 
 ## A full `_targets.R` example
 

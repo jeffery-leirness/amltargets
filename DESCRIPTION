@@ -15,13 +15,18 @@ Description: Provides a targets Target Factory (Archetype) that offloads heavy
     pipelines survive local computer sleep and reboot cycles.
 License: MIT + file LICENSE
 Encoding: UTF-8
-RoxygenNote: 7.3.3
 Config/testthat/edition: 3
 Imports:
-    targets,
-    processx,
+    amltools,
+    cli,
+    fs,
     jsonlite,
+    processx,
+    purrr,
+    targets,
     yaml
+Remotes:
+    jeffery-leirness/amltools
 Suggests:
     testthat (>= 3.0.0),
     withr,
@@ -29,3 +34,4 @@ Suggests:
     knitr,
     rmarkdown
 VignetteBuilder: knitr
+Config/roxygen2/version: 8.0.0

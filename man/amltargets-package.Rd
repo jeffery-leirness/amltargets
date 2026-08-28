@@ -11,5 +11,10 @@ Provides a targets Target Factory (Archetype) that offloads heavy targets to Azu
 \author{
 \strong{Maintainer}: Jeffery Leirness \email{jeffery.leirness@noaa.gov} (\href{https://orcid.org/0000-0003-3604-2790}{ORCID})
 
+Authors:
+\itemize{
+  \item Jeffery Leirness \email{jeffery.leirness@noaa.gov} (\href{https://orcid.org/0000-0003-3604-2790}{ORCID})
+}
+
 }
 \keyword{internal}

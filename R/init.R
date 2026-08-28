@@ -1,14 +1,17 @@
-#' Initialize Azure ML Targets Session
+#' Initialize an Azure ML-backed targets session
 #'
-#' Detects environment, mounts or resolves blob storage, establishes parity
-#' symlinks, and pulls cloud metadata into the local targets store.
+#' Top-level entry point that establishes blob storage parity (see
+#' [aml_parity()]) and then pulls the cloud targets store into the local
+#' session (see [aml_store_pull()]).
 #'
-#' @param account_name Azure storage account name.
-#' @param container_name Azure storage container name.
-#' @param cloud_store_path Path suffix under blob storage root to the targets store.
-#' @param project Target project/region ID. Defaults to TAR_PROJECT env var.
+#' @param account_name Character scalar. Azure storage account name.
+#' @param container_name Character scalar. Azure storage container name.
+#' @param cloud_store_path Character scalar. Path suffix under the blob storage
+#'   root to the targets store parent directory.
+#' @param project Character scalar. Target project/region ID. Defaults to the
+#'   `TAR_PROJECT` environment variable.
 #'
-#' @return Named list: `is_azure`, `run_mode`, `cloud_store_base`.
+#' @return A named list with elements `is_azure` and `cloud_store_base`.
 #' @export
 aml_init <- function(
   account_name,
@@ -16,24 +19,15 @@ aml_init <- function(
   cloud_store_path,
   project = Sys.getenv("TAR_PROJECT")
 ) {
-  parity <- setup_azure_parity(
+  parity <- aml_parity(
     account_name = account_name,
     container_name = container_name
   )
-
   cloud_store_base <- fs::path(
     parity$link_path$blob_storage,
     cloud_store_path
   )
+  aml_store_pull(cloud_store_base = cloud_store_base, project = project)
 
-  prepare_cloud_targets_store(
-    cloud_store_base = cloud_store_base,
-    project = project
-  )
-
-  list(
-    is_azure = parity$is_azure,
-    run_mode = parity$run_mode,
-    cloud_store_base = cloud_store_base
-  )
+  list(is_azure = parity$is_azure, cloud_store_base = cloud_store_base)
 }
