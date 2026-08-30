@@ -13,7 +13,7 @@ Description: Provides a targets Target Factory (Archetype) that offloads heavy
     targets to Azure ML Compute Clusters as asynchronous Command Jobs. Job state
     is tracked via JSON token files on a shared Azure Blob storage mount so that
     pipelines survive local computer sleep and reboot cycles.
-License: MIT + file LICENSE
+License: file LICENSE
 Encoding: UTF-8
 Config/testthat/edition: 3
 Imports:

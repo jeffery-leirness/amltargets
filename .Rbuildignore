@@ -9,5 +9,4 @@
 ^\.vscode$
 ^\.vscode/
 ^README\.Rmd$
-^README\.html$
 ^README-.*\.png$

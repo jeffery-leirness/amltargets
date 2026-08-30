@@ -156,12 +156,11 @@ of your session, then push metadata back after each `tar_make()`:
 store <- aml_init(
   account_name     = "mystorageacct",
   container_name   = "mycontainer",
-  cloud_store_path = "pipeline/_targets",
-  project          = "region_a"
+  cloud_store_path = "pipeline/_targets"
 )
 
 tar_make()
-aml_store_push(store$cloud_store_base, project = "region_a")
+aml_store_push(store$cloud_store_base)
 ```
 
 After cluster jobs land, call `aml_store_sync()` to remount and re-pull fresh
@@ -176,6 +175,10 @@ for full details.
 - Package vignette: `vignette("amltargets-run", package = "amltargets")`
 - `targets` documentation: <https://docs.ropensci.org/targets/>
 
+## Disclaimer
+
+This repository is a scientific product and is not official communication of the National Oceanic and Atmospheric Administration, or the United States Department of Commerce. All NOAA GitHub project code is provided on an 'as is' basis and the user assumes responsibility for its use. Any claims against the Department of Commerce or Department of Commerce bureaus stemming from the use of this GitHub project will be governed by all applicable Federal law. Any reference to specific commercial products, processes, or services by service mark, trademark, manufacturer, or otherwise, does not constitute or imply their endorsement, recommendation or favoring by the Department of Commerce. The Department of Commerce seal and logo, or the seal and logo of a DOC bureau, shall not be used in any manner to imply endorsement of any commercial product or activity by DOC or the United States Government.
+
 ## License
 
-MIT, see `LICENSE`.
+This software is in the public domain in the United States and is released internationally under a royalty-free, nonexclusive license. See the [LICENSE](LICENSE) file for full details.
