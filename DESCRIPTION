@@ -1,6 +1,6 @@
 Package: amltargets
 Title: Azure ML Target Factory for the targets Package
-Version: 0.3.0
+Version: 0.3.1
 Authors@R: 
     person(
       given = "Jeffery", 
