@@ -14,11 +14,25 @@
 #' @param container_name Character scalar. Azure storage container name.
 #' @param link_dir Character scalar. Parent directory for the parity symlinks.
 #'   Defaults to `"data"`.
+#' @param blob_link_name Character scalar. Name for the blob storage symlink
+#'   inside `link_dir` and the key in the returned `link_path` list. Defaults
+#'   to `"blob_storage"`.
+#' @param workspace_link_name Character scalar. Name for the workspace symlink
+#'   inside `link_dir` and the key in the returned `link_path` list. Defaults
+#'   to `"workspace"`.
 #'
 #' @return A named list with elements `is_azure` (logical) and `link_path`
-#'   (named list of created symlink paths).
+#'   (named list of created symlink paths, keyed by `blob_link_name` and
+#'   `workspace_link_name`).
+#' @importFrom stats setNames
 #' @export
-aml_parity <- function(account_name, container_name, link_dir = "data") {
+aml_parity <- function(
+  account_name,
+  container_name,
+  link_dir = "data",
+  blob_link_name = "blob_storage",
+  workspace_link_name = "workspace"
+) {
   is_azure <- nzchar(Sys.getenv("AZUREML_RUN_ID"))
 
   if (is_azure) {
@@ -35,16 +49,16 @@ aml_parity <- function(account_name, container_name, link_dir = "data") {
   }
 
   link_path <- amltools::set_symlink(
-    source_paths = list(
-      blob_storage = blob_path,
-      workspaceworkingdirectory = workspace_path
+    source_paths = stats::setNames(
+      list(blob_path, workspace_path),
+      c(blob_link_name, workspace_link_name)
     ),
     link_dir = link_dir
   )
 
   Sys.setenv(
-    BLOB_STORAGE_PARITY_PATH = link_path$blob_storage,
-    WORKSPACE_PARITY_PATH = link_path$workspaceworkingdirectory
+    BLOB_STORAGE_PARITY_PATH = link_path[[blob_link_name]],
+    WORKSPACE_PARITY_PATH = link_path[[workspace_link_name]]
   )
 
   list(is_azure = is_azure, link_path = link_path)

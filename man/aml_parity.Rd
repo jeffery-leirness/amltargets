@@ -4,7 +4,13 @@
 \alias{aml_parity}
 \title{Establish Azure Blob Storage parity symlinks}
 \usage{
-aml_parity(account_name, container_name, link_dir = "data")
+aml_parity(
+  account_name,
+  container_name,
+  link_dir = "data",
+  blob_link_name = "blob_storage",
+  workspace_link_name = "workspace"
+)
 }
 \arguments{
 \item{account_name}{Character scalar. Azure storage account name.}
@@ -13,10 +19,19 @@ aml_parity(account_name, container_name, link_dir = "data")
 
 \item{link_dir}{Character scalar. Parent directory for the parity symlinks.
 Defaults to `"data"`.}
+
+\item{blob_link_name}{Character scalar. Name for the blob storage symlink
+inside `link_dir` and the key in the returned `link_path` list. Defaults
+to `"blob_storage"`.}
+
+\item{workspace_link_name}{Character scalar. Name for the workspace symlink
+inside `link_dir` and the key in the returned `link_path` list. Defaults
+to `"workspace"`.}
 }
 \value{
 A named list with elements `is_azure` (logical) and `link_path`
-  (named list of created symlink paths).
+  (named list of created symlink paths, keyed by `blob_link_name` and
+  `workspace_link_name`).
 }
 \description{
 Detects whether the session is running inside an Azure ML compute job or on a

@@ -60,26 +60,13 @@ AZURE_RESOURCE_GROUP=my-resource-group
 AZURE_ML_WORKSPACE=my-ml-workspace
 ```
 
-### Mount `_targets` on your Compute Instance
+### Shared `_targets` store
 
-To share the same cache between local orchestration and cluster jobs, mount the
-blob datastore path locally and symlink it into your project as `_targets/`.
-
-```bash
-az ml datastore mount \
-  --path "azureml://datastores/workspaceblobstore/paths/pipeline/_targets/" \
-  --mode rw_mount \
-  --mount-point "$HOME/amltargets-mounts/pipeline-targets" \
-  --resource-group my-resource-group \
-  --workspace-name my-ml-workspace
-
-cd /path/to/your/project
-ln -sfn "$HOME/amltargets-mounts/pipeline-targets" _targets
-ls -ld _targets
-```
-
-If `az ml datastore mount` is not recognized, update Azure CLI and the ML extension, then
-rerun the command.
+Use `aml_init()` instead of a manual `az ml datastore mount` + symlink step.
+It mounts blob storage, establishes parity symlinks, and pulls cloud metadata
+into your local session in one call. See
+[Sharing the `_targets` store](https://jeffery-leirness.github.io/amltargets/articles/amltargets-run.html#sharing-the-_targets-store-between-local-and-cluster)
+in the vignette for the full workflow.
 
 ## Usage
 
@@ -155,6 +142,34 @@ When an Azure ML job is submitted, `amltargets` writes a token file containing
 the run ID. If `tar_make()` is interrupted (sleep, reboot, session exit), the
 next run resumes tracking the existing Azure ML job instead of creating a
 duplicate submission.
+
+## Shared `_targets` store
+
+`tar_aml_job()` writes results into the blob-backed `_targets/` cache on the
+cluster. The `aml_*()` store helpers keep your local session in sync with it.
+
+`aml_init()` replaces any manual mount step — it detects the environment,
+mounts blob storage, and pulls cloud metadata locally. Call it once at the top
+of your session, then push metadata back after each `tar_make()`:
+
+```{r store-lifecycle, eval=FALSE}
+store <- aml_init(
+  account_name     = "mystorageacct",
+  container_name   = "mycontainer",
+  cloud_store_path = "pipeline/_targets",
+  project          = "region_a"
+)
+
+tar_make()
+aml_store_push(store$cloud_store_base, project = "region_a")
+```
+
+After cluster jobs land, call `aml_store_sync()` to remount and re-pull fresh
+metadata. `aml_store_verify()` self-heals a broken local cache;
+`aml_store_reset()` wipes it cleanly without touching cloud objects.
+
+See the [store lifecycle vignette section](https://jeffery-leirness.github.io/amltargets/articles/amltargets-run.html#sharing-the-_targets-store-between-local-and-cluster)
+for full details.
 
 ## Learn more
 

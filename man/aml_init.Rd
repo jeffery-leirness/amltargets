@@ -8,7 +8,9 @@ aml_init(
   account_name,
   container_name,
   cloud_store_path,
-  project = Sys.getenv("TAR_PROJECT")
+  project = Sys.getenv("TAR_PROJECT"),
+  blob_link_name = "blob_storage",
+  workspace_link_name = "workspace"
 )
 }
 \arguments{
@@ -21,6 +23,12 @@ root to the targets store parent directory.}
 
 \item{project}{Character scalar. Target project/region ID. Defaults to the
 `TAR_PROJECT` environment variable.}
+
+\item{blob_link_name}{Character scalar. Forwarded to [aml_parity()]. Defaults
+to `"blob_storage"`.}
+
+\item{workspace_link_name}{Character scalar. Forwarded to [aml_parity()].
+Defaults to `"workspace"`.}
 }
 \value{
 A named list with elements `is_azure` and `cloud_store_base`.
